@@ -1,0 +1,18 @@
+# compiled binary
+brief
+
+# database (local state)
+*.db
+
+# config (may contain channel IDs / secrets)
+brief-config.json
+
+# debug logs
+/tmp/brief-*.log
+
+# macOS
+.DS_Store
+
+# Go
+*.test
+*.out
