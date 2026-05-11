@@ -1,10 +1,10 @@
 .PHONY: build run test fmt vet install uninstall clean
 
-BIN    := brief
+BIN    := brf
 PREFIX ?= /usr/local
 
 build:
-	CGO_ENABLED=1 go build -o $(BIN) .
+	go build -o $(BIN) .
 
 run: build
 	./$(BIN)

@@ -9,22 +9,23 @@ import (
 )
 
 type ghPR struct {
-	Number    int       `json:"number"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	Author    struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	URL    string `json:"url"`
+	Body   string `json:"body"`
+	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	CreatedAt time.Time `json:"createdAt"`
+	CreatedAt time.Time  `json:"createdAt"`
 	MergedAt  *time.Time `json:"mergedAt"`
-	State     string    `json:"state"`
+	State     string     `json:"state"`
 }
 
 func fetchGithubSummary(owner, repo string, lookbackHours int) (string, error) {
 	out, err := exec.Command("gh", "pr", "list",
 		"--repo", owner+"/"+repo,
 		"--state", "all",
-		"--json", "number,title,body,author,createdAt,mergedAt,state",
+		"--json", "number,title,url,body,author,createdAt,mergedAt,state",
 		"--limit", "200",
 	).Output()
 	if err != nil {
@@ -59,7 +60,7 @@ func fetchGithubSummary(owner, repo string, lookbackHours int) (string, error) {
 		if pr.MergedAt != nil {
 			status = "merged"
 		}
-		fmt.Fprintf(&sb, "PR #%d [%s]: %s (by %s)\n", pr.Number, status, pr.Title, pr.Author.Login)
+		fmt.Fprintf(&sb, "PR #%d [%s]: %s (by %s) — %s\n", pr.Number, status, pr.Title, pr.Author.Login, pr.URL)
 		if pr.Body != "" {
 			body := pr.Body
 			if len(body) > 500 {
@@ -72,16 +73,19 @@ func fetchGithubSummary(owner, repo string, lookbackHours int) (string, error) {
 
 	sb.WriteString(`Summarize these pull requests at a high level. What's being worked on? What has shipped? Any notable patterns or themes across PRs?
 
+Each bullet must end with the PR's URL in parentheses, e.g.: "- Fixed the login bug (https://github.com/...)"
+
 Respond with EXACTLY this format:
 
 ### ` + owner + `/` + repo + `
 **Status:** one-sentence summary of overall state
 **What's being worked on:**
-- bullet 1
-- bullet 2
+- bullet with url (https://github.com/...)
+- bullet with url (https://github.com/...)
 **What shipped:**
-- bullet 1 (or "Nothing merged in this window")
+- bullet with url (https://github.com/...) (or "Nothing merged in this window")
 **Notable patterns:** observations about the work, or "None"`)
 
 	return runClaude(sb.String())
 }
+

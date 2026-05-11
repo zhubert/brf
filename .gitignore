@@ -1,14 +1,11 @@
 # compiled binary
-brief
+brf
 
 # database (local state)
 *.db
 
-# config (may contain channel IDs / secrets)
-brief-config.json
-
 # debug logs
-/tmp/brief-*.log
+/tmp/brf-*.log
 
 # macOS
 .DS_Store

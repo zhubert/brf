@@ -1,4 +1,4 @@
-module github.com/zhubert/brief
+module github.com/zhubert/brf
 
 go 1.26.2
 
@@ -6,7 +6,6 @@ require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/muesli/reflow v0.3.0
 )
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,88 +18,145 @@ type channelEntry struct {
 }
 
 type githubRepo struct {
-	Owner string
-	Repo  string
+	Owner string `json:"owner"`
+	Repo  string `json:"repo"`
 }
 
-type briefConfig struct {
+type brfConfig struct {
 	Slack struct {
 		Channels      []channelEntry `json:"channels"`
 		LookbackHours int            `json:"lookback_hours"`
 	} `json:"slack"`
 	GitHub struct {
-		Repos []githubRepo
-	}
+		Repos []githubRepo `json:"repos"`
+	} `json:"github"`
 }
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "brief: %v\n", err)
+		fmt.Fprintf(os.Stderr, "brf: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+func configPath() (string, error) {
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		configHome = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configHome, "brf", "config.json"), nil
+}
+
+func loadConfig() (*brfConfig, error) {
+	path, err := configPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		cfg := &brfConfig{}
+		cfg.Slack.LookbackHours = 168
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return nil, fmt.Errorf("creating config dir: %w", err)
+		}
+		if err := saveConfig(cfg); err != nil {
+			return nil, fmt.Errorf("writing default config: %w", err)
+		}
+		return cfg, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading config %s: %w", path, err)
+	}
+	var cfg brfConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	if cfg.Slack.LookbackHours == 0 {
+		cfg.Slack.LookbackHours = 168
+	}
+	return &cfg, nil
+}
+
+func lookupChannelID(name string) (string, error) {
+	prompt := fmt.Sprintf(
+		"Search for the Slack channel named %q using slack_search_channels.\n"+
+			"Return ONLY the channel ID (e.g. C01234ABCDE) and nothing else.\n"+
+			"If the channel is not found, return exactly: NOT_FOUND",
+		name,
+	)
+	result, err := runClaude(prompt, "--allowedTools", "mcp__claude_ai_Slack__slack_search_channels")
+	if err != nil {
+		return "", err
+	}
+	result = strings.TrimSpace(result)
+	if result == "NOT_FOUND" {
+		return "", fmt.Errorf("channel %q not found", name)
+	}
+	return result, nil
+}
+
+func saveConfig(cfg *brfConfig) error {
+	path, err := configPath()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func checkDeps(cfg *brfConfig) error {
+	if len(cfg.GitHub.Repos) > 0 {
+		if _, err := exec.LookPath("gh"); err != nil {
+			return errors.New("`gh` not found on PATH — install GitHub CLI: https://cli.github.com")
+		}
+		if out, err := exec.Command("gh", "auth", "status").CombinedOutput(); err != nil {
+			return fmt.Errorf("GitHub CLI not authenticated — run `gh auth login`\n%s", strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
+
 func run() error {
 	if _, err := exec.LookPath("claude"); err != nil {
-		return errors.New("`claude` not found on PATH — install Claude Code")
+		return errors.New("`claude` not found on PATH — install Claude Code: https://claude.ai/code")
 	}
 
-	path, err := dbPath()
-	if err != nil {
-		return fmt.Errorf("finding db path: %w", err)
-	}
-
-	store, err := openStore(path)
-	if err != nil {
-		return fmt.Errorf("opening store: %w", err)
-	}
-
-	cfg, err := store.loadConfig()
+	cfg, err := loadConfig()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	if err := checkDeps(cfg); err != nil {
+		return err
+	}
+
 	var items []item
 	for _, ch := range cfg.Slack.Channels {
-		it := item{
+		items = append(items, item{
 			sourceType: "slack",
 			sourceID:   ch.ID,
 			name:       ch.Name,
-		}
-		if summary, fetchedAt, ok := store.getCachedSummary("slack", ch.ID); ok {
-			it.summary = summary
-			it.fetchedAt = fetchedAt
-		}
-		items = append(items, it)
+		})
 	}
 	for _, r := range cfg.GitHub.Repos {
 		sourceID := r.Owner + "/" + r.Repo
-		it := item{
+		items = append(items, item{
 			sourceType: "github",
 			sourceID:   sourceID,
 			name:       sourceID,
-		}
-		if summary, fetchedAt, ok := store.getCachedSummary("github", sourceID); ok {
-			it.summary = summary
-			it.fetchedAt = fetchedAt
-		}
-		items = append(items, it)
+		})
 	}
-
-	header := "Project Brief — " + time.Now().Format("January 2, 2006")
-	return runTUI(header, items, cfg, store)
+	header := "Project Brf — " + time.Now().Format("January 2, 2006")
+	return runTUI(header, items, cfg)
 }
 
-func logRaw(name, text string, err error) {
-	path := fmt.Sprintf("/tmp/brief-%s.log", strings.NewReplacer("/", "-", " ", "-").Replace(name))
-	var content string
-	if err != nil {
-		content = fmt.Sprintf("ERROR: %v\n", err)
-	} else {
-		content = text
-	}
-	os.WriteFile(path, []byte(content), 0644) //nolint
-}
 
 func formatLookback(hours int) string {
 	if hours > 0 && hours%168 == 0 {
@@ -136,10 +194,13 @@ func buildChannelPrompt(ch channelEntry, lookbackHours int) string {
 ### %s
 **Status:** one-sentence summary of where things stand
 **Recent activity:**
-- bullet 1
-- bullet 2
-**Blockers / open questions:** unresolved issues, or "None"
-**Action items:** things needing a decision or follow-up, or "None"
+- bullet 1 (https://slack-permalink-url)
+- bullet 2 (https://slack-permalink-url)
+**Blockers / open questions:** unresolved issues with permalink, or "None"
+**Action items:** things needing a decision or follow-up with permalink, or "None"
+
+Each bullet must end with the Slack permalink for that specific message or thread in parentheses.
+Use the permalink field from each message returned by slack_read_channel.
 
 If there was no meaningful activity in the lookback window, respond with EXACTLY:
 
@@ -210,7 +271,7 @@ func runClaude(prompt string, extraArgs ...string) (string, error) {
 		if claudeStderr != "" {
 			return "", fmt.Errorf("no result from claude (stderr: %s)", claudeStderr)
 		}
-		return "", errors.New("no result from claude — check if Slack MCP is configured")
+		return "", errors.New("no result from claude — ensure the Slack MCP is configured in Claude Code (run `claude mcp add` or check ~/.claude/settings.json)")
 	}
 	return result, nil
 }

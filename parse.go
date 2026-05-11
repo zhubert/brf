@@ -42,6 +42,29 @@ func parseSections(text string) (string, []section) {
 	return header, sections
 }
 
+// normalizeSummary ensures exactly one blank line before each bold section
+// header ("**...") and collapses runs of multiple blank lines down to one.
+func normalizeSummary(text string) string {
+	lines := strings.Split(text, "\n")
+	var out []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		isSectionHeader := strings.HasPrefix(trimmed, "**")
+		if isSectionHeader && len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+			out = append(out, "")
+		}
+		if trimmed == "" && len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	// trim trailing blank lines
+	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+		out = out[:len(out)-1]
+	}
+	return strings.Join(out, "\n")
+}
+
 func makeSection(title string, lines []string) section {
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 		lines = lines[:len(lines)-1]
