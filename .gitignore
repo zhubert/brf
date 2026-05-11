@@ -1,6 +1,9 @@
 # compiled binary
 brf
 
+# release artifacts
+dist/
+
 # database (local state)
 *.db
 
