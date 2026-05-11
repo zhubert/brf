@@ -1,4 +1,4 @@
-.PHONY: build run test fmt vet install uninstall clean
+.PHONY: build run test fmt vet install uninstall clean snapshot release
 
 BIN    := brf
 PREFIX ?= /usr/local
@@ -29,3 +29,10 @@ uninstall:
 
 clean:
 	rm -f $(BIN)
+	rm -rf dist/
+
+snapshot:
+	goreleaser release --snapshot --clean
+
+release:
+	./scripts/release.sh $(BUMP)

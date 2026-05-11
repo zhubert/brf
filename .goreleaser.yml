@@ -1,0 +1,77 @@
+version: 2
+
+project_name: brf
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: brf
+    main: .
+    binary: brf
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: brf
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+
+release:
+  github:
+    owner: zhubert
+    name: brf
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: brf
+    repository:
+      owner: zhubert
+      name: homebrew-tap
+      branch: main
+    directory: Formula
+    homepage: "https://github.com/zhubert/brf"
+    description: "Terminal briefing tool for Slack and GitHub activity, powered by Claude"
+    license: "MIT"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "brf {{ .Tag }}"
+    dependencies:
+      - name: gh
+    install: |
+      bin.install "brf"
+    caveats: |
+      brf shells out to `gh` and `claude`. Install the Claude Code CLI
+      separately (https://claude.com/claude-code) and make sure both
+      `gh` and `claude` are authenticated before running.
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/brf --version 2>&1")
